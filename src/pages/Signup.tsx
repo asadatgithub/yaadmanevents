@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
 export default function Signup() {
@@ -10,6 +11,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const { signUp } = useAuth()
+  const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,7 +22,12 @@ export default function Signup() {
       setError(error)
       setLoading(false)
     } else {
-      setSuccess(true)
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        navigate('/dashboard', { replace: true })
+      } else {
+        setSuccess(true)
+      }
       setLoading(false)
     }
   }

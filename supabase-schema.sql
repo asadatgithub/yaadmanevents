@@ -48,8 +48,12 @@ create table public.events (
   name text not null,
   date date not null,
   venue text not null,
-  organizer_name text not null,
+  address_1 text,
+  address_2 text,
+  parish text,
+  organizer_name text,
   banner_url text,
+  qr_active boolean default null,
   user_id uuid references public.profiles(id) on delete cascade not null,
   created_at timestamptz default now()
 );
@@ -80,27 +84,48 @@ create policy "Admins can delete events"
   on public.events for delete
   using (public.is_admin());
 
--- 3. Expenses table
-create table public.expenses (
+-- 3. Supports table (promoter-to-promoter support tracking)
+create table public.supports (
   id uuid default gen_random_uuid() primary key,
   event_id uuid references public.events(id) on delete cascade not null,
+  supporter_event_id uuid references public.events(id) on delete cascade not null,
   amount numeric not null check (amount > 0),
   created_at timestamptz default now()
 );
 
-alter table public.expenses enable row level security;
+alter table public.supports enable row level security;
 
-create policy "Anyone can insert expenses"
-  on public.expenses for insert
-  with check (true);
+create policy "Authenticated users can insert supports"
+  on public.supports for insert
+  with check (auth.role() = 'authenticated');
 
-create policy "Admins can view expenses"
-  on public.expenses for select
+create policy "Event owners can view their supports"
+  on public.supports for select
+  using (
+    exists (
+      select 1 from public.events
+      where events.id = supports.event_id
+      and events.user_id = auth.uid()
+    )
+    or
+    exists (
+      select 1 from public.events
+      where events.id = supports.supporter_event_id
+      and events.user_id = auth.uid()
+    )
+  );
+
+create policy "Admins can view all supports"
+  on public.supports for select
   using (public.is_admin());
 
-create policy "Admins can delete expenses"
-  on public.expenses for delete
+create policy "Admins can delete supports"
+  on public.supports for delete
   using (public.is_admin());
+
+-- MIGRATION: If upgrading from expenses to supports, run:
+-- DROP TABLE IF EXISTS public.expenses;
+-- Then create the supports table above.
 
 -- 4. Auto-create profile on signup trigger
 create or replace function public.handle_new_user()

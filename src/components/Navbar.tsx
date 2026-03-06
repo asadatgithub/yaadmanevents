@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import logo from '../assets/logo.png'
 
 export default function Navbar() {
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, signOut, isAdmin } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -40,17 +40,28 @@ export default function Navbar() {
           </Link>
 
           <div className="hidden md:flex items-center gap-6">
-            <Link to="/" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
-              Home
-            </Link>
-            {user ? (
+            {isAdmin ? (
               <>
+                <Link to="/admin/dashboard" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
+                  Admin Dashboard
+                </Link>
+                <span className="text-gray-500 text-sm">{profile?.name}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="bg-jamaica-green hover:bg-jamaica-green-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : user ? (
+              <>
+                <Link to="/" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
+                  Home
+                </Link>
                 <Link to="/dashboard" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
                   Dashboard
                 </Link>
-                <span className="text-gray-500 text-sm">
-                  {profile?.name}
-                </span>
+                <span className="text-gray-500 text-sm">{profile?.name}</span>
                 <button
                   onClick={handleSignOut}
                   className="bg-jamaica-green hover:bg-jamaica-green-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -60,16 +71,13 @@ export default function Navbar() {
               </>
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium"
-                >
+                <Link to="/" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
+                  Home
+                </Link>
+                <Link to="/login" className="text-gray-300 hover:text-jamaica-gold transition-colors text-sm font-medium">
                   Log In
                 </Link>
-                <Link
-                  to="/signup"
-                  className="bg-jamaica-green hover:bg-jamaica-green-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
+                <Link to="/signup" className="bg-jamaica-green hover:bg-jamaica-green-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                   Sign Up
                 </Link>
               </>
@@ -93,11 +101,20 @@ export default function Navbar() {
 
       {menuOpen && (
         <div className="md:hidden border-t border-white/10 px-4 pb-4 space-y-2 bg-jamaica-black/95 backdrop-blur-md">
-          <Link to="/" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
-            Home
-          </Link>
-          {user ? (
+          {isAdmin ? (
             <>
+              <Link to="/admin/dashboard" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
+                Admin Dashboard
+              </Link>
+              <button onClick={() => { handleSignOut(); setMenuOpen(false) }} className="block py-2 text-jamaica-green text-sm font-medium">
+                Sign Out
+              </button>
+            </>
+          ) : user ? (
+            <>
+              <Link to="/" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
+                Home
+              </Link>
               <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
                 Dashboard
               </Link>
@@ -107,6 +124,9 @@ export default function Navbar() {
             </>
           ) : (
             <>
+              <Link to="/" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
+                Home
+              </Link>
               <Link to="/login" onClick={() => setMenuOpen(false)} className="block py-2 text-gray-300 hover:text-jamaica-gold text-sm">
                 Log In
               </Link>
