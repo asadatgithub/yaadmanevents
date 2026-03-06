@@ -177,11 +177,19 @@ export default function Dashboard() {
                 >
                   <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     {event.banner_url ? (
-                      <img
-                        src={event.banner_url}
-                        alt={event.name}
-                        className="w-full sm:w-28 h-36 sm:h-20 object-cover rounded-lg"
-                      />
+                      <a
+                        href={event.banner_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block shrink-0 cursor-pointer hover:opacity-90 transition-opacity rounded-lg overflow-hidden"
+                        title="View full flyer"
+                      >
+                        <img
+                          src={event.banner_url}
+                          alt={event.name}
+                          className="w-full sm:w-28 h-36 sm:h-20 object-cover rounded-lg"
+                        />
+                      </a>
                     ) : (
                       <div className="w-full sm:w-28 h-36 sm:h-20 bg-gradient-to-br from-jamaica-green/10 to-jamaica-gold/10 rounded-lg flex items-center justify-center">
                         <span className="text-2xl">🎵</span>

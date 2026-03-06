@@ -551,7 +551,9 @@ export default function AdminDashboard() {
               <div key={ev.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="flex flex-col sm:flex-row">
                   {ev.banner_url ? (
-                    <img src={ev.banner_url} alt={ev.name} className="w-full sm:w-32 h-32 sm:h-auto object-cover" />
+                    <a href={ev.banner_url} target="_blank" rel="noopener noreferrer" className="block shrink-0 cursor-pointer hover:opacity-90 transition-opacity" title="View full flyer">
+                      <img src={ev.banner_url} alt={ev.name} className="w-full sm:w-32 h-32 sm:h-auto object-cover" />
+                    </a>
                   ) : (
                     <div className="w-full sm:w-32 h-24 sm:h-auto bg-gradient-to-br from-jamaica-green/10 to-jamaica-gold/10 flex items-center justify-center">
                       <span className="text-2xl">🎵</span>

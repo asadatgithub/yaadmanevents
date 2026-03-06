@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 interface EventCardProps {
   event: {
@@ -15,6 +15,7 @@ interface EventCardProps {
 }
 
 export default function EventCard({ event }: EventCardProps) {
+  const navigate = useNavigate()
   const formattedDate = new Date(event.date).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -24,19 +25,29 @@ export default function EventCard({ event }: EventCardProps) {
   return (
     <Link to={`/event/${event.id}`} className="group block">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-jamaica-green/5 hover:-translate-y-1.5">
-        <div className="relative h-48 bg-gradient-to-br from-jamaica-green/20 to-jamaica-gold/20 overflow-hidden">
+        <div
+          className="relative h-48 bg-gradient-to-br from-jamaica-green/20 to-jamaica-gold/20 overflow-hidden"
+          onClick={event.banner_url ? (e) => { e.preventDefault(); e.stopPropagation(); window.open(event.banner_url!, '_blank'); } : undefined}
+          role={event.banner_url ? 'button' : undefined}
+          tabIndex={event.banner_url ? 0 : undefined}
+          onKeyDown={event.banner_url ? (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); window.open(event.banner_url!, '_blank'); } } : undefined}
+        >
           {event.banner_url ? (
             <img
               src={event.banner_url}
               alt={event.name}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 cursor-pointer"
+              title="View full flyer"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <span className="text-5xl">🎵</span>
             </div>
           )}
-          <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-gray-700 shadow-sm">
+          <div
+            className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-gray-700 shadow-sm z-10 cursor-pointer"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/event/${event.id}`) }}
+          >
             {formattedDate}
           </div>
         </div>

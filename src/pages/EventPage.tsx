@@ -114,17 +114,26 @@ export default function EventPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {event.banner_url ? (
-          <div className="relative rounded-2xl overflow-hidden mb-8 shadow-lg">
+          <a
+            href={event.banner_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="relative block rounded-2xl overflow-hidden mb-8 shadow-lg cursor-pointer hover:opacity-95 transition-opacity group"
+            title="View full flyer"
+          >
             <img
               src={event.banner_url}
               alt={event.name}
               className="w-full h-64 md:h-80 object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-            <div className="absolute bottom-0 left-0 p-6 md:p-8">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 p-6 md:p-8 pointer-events-none">
               <h1 className="text-3xl md:text-4xl font-extrabold text-white">{event.name}</h1>
             </div>
-          </div>
+            <div className="absolute top-3 right-3 bg-black/40 text-white/90 text-xs font-medium px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+              View full flyer
+            </div>
+          </a>
         ) : (
           <div className="relative rounded-2xl overflow-hidden mb-8 bg-gradient-to-br from-jamaica-green to-jamaica-green-dark p-8 md:p-12">
             <h1 className="text-3xl md:text-4xl font-extrabold text-white">{event.name}</h1>
