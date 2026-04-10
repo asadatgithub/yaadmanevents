@@ -7,7 +7,6 @@ import {
   normalizePaymentMethod,
   parseTicketHolders,
 } from "./_lib/booking";
-import { sendBookingConfirmationEmail } from "./_lib/mailer";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -168,12 +167,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const unitTotal = base + addons.reduce((s, a) => s + Number(a.price), 0);
   const total = unitTotal * quantity;
 
+  let refererOrigin = "";
+  if (req.headers.referer) {
+    try {
+      refererOrigin = new URL(req.headers.referer as string).origin;
+    } catch {
+      refererOrigin = "";
+    }
+  }
   const origin =
     process.env.APP_ORIGIN ||
     (req.headers.origin as string) ||
-    (req.headers.referer
-      ? new URL(req.headers.referer as string).origin
-      : "") ||
+    refererOrigin ||
     "";
 
   if (!origin) {
@@ -215,15 +220,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       appOrigin: origin,
     });
 
-    await sendBookingConfirmationEmail({
-      to: customerEmail,
-      bookingReference,
-      eventName: event.name,
-      paymentMethod: "cash",
-      paymentStatus: "pending_cash",
-      totalAmount: total,
-      ticketRows,
-    });
+    try {
+      const { sendBookingConfirmationEmail } = await import("./_lib/mailer");
+      await sendBookingConfirmationEmail({
+        to: customerEmail,
+        bookingReference,
+        eventName: event.name,
+        paymentMethod: "cash",
+        paymentStatus: "pending_cash",
+        totalAmount: total,
+        ticketRows,
+      });
+    } catch (emailErr) {
+      console.error("Cash booking email send failed:", emailErr);
+    }
 
     return res.status(200).json({
       cash: true,

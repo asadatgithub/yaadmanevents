@@ -8,7 +8,6 @@ import {
   normalizePaymentMethod,
   parseTicketHolders,
 } from "./_lib/booking";
-import { sendBookingConfirmationEmail } from "./_lib/mailer";
 
 export const config = {
   api: {
@@ -143,17 +142,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ticketHolders,
       appOrigin,
     });
-    await sendBookingConfirmationEmail({
-      to: customerEmail,
-      bookingReference,
-      eventName: event?.name || "Event",
-      eventDate: event?.date || null,
-      venue: event?.venue || null,
-      paymentMethod,
-      paymentStatus: "paid",
-      totalAmount,
-      ticketRows,
-    });
+    try {
+      const { sendBookingConfirmationEmail } = await import("./_lib/mailer");
+      await sendBookingConfirmationEmail({
+        to: customerEmail,
+        bookingReference,
+        eventName: event?.name || "Event",
+        eventDate: event?.date || null,
+        venue: event?.venue || null,
+        paymentMethod,
+        paymentStatus: "paid",
+        totalAmount,
+        ticketRows,
+      });
+    } catch (emailErr) {
+      console.error("Webhook booking email send failed:", emailErr);
+    }
   }
 
   return res.status(200).json({ received: true });
