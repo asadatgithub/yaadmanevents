@@ -7,7 +7,6 @@ import {
   normalizePaymentMethod,
   parseTicketHolders,
 } from "./_lib/booking";
-import { sendBookingConfirmationEmail } from "./_lib/mailer";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -148,10 +147,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .eq("id", eventId)
     .single();
 
+  let refererOrigin = "";
+  if (req.headers.referer) {
+    try {
+      refererOrigin = new URL(req.headers.referer as string).origin;
+    } catch {
+      refererOrigin = "";
+    }
+  }
   const appOrigin =
     process.env.APP_ORIGIN ||
     (req.headers.origin as string) ||
-    (req.headers.referer ? new URL(req.headers.referer as string).origin : "") ||
+    refererOrigin ||
     "";
   const tickets = await insertBookingTickets(admin, {
     bookingId: bookingData.id,
@@ -160,17 +167,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     appOrigin,
   });
 
-  await sendBookingConfirmationEmail({
-    to: customerEmail,
-    bookingReference,
-    eventName: event?.name || "Event",
-    eventDate: event?.date || null,
-    venue: event?.venue || null,
-    paymentMethod,
-    paymentStatus: "paid",
-    totalAmount,
-    ticketRows: tickets,
-  });
+  try {
+    const { sendBookingConfirmationEmail } = await import("./_lib/mailer");
+    await sendBookingConfirmationEmail({
+      to: customerEmail,
+      bookingReference,
+      eventName: event?.name || "Event",
+      eventDate: event?.date || null,
+      venue: event?.venue || null,
+      paymentMethod,
+      paymentStatus: "paid",
+      totalAmount,
+      ticketRows: tickets,
+    });
+  } catch (emailErr) {
+    console.error("Confirm booking email send failed:", emailErr);
+  }
 
   return res.status(200).json({ ok: true });
 }
