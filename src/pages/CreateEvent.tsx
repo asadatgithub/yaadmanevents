@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { useState } from "react";
+import AddonsBuilder from "../components/AddonsBuilder";
 
 const PROMO_LINKS = [
   {
@@ -56,6 +57,25 @@ const PROMO_LINKS = [
   },
 ];
 
+const generateTimeOptions = () => {
+  const times = [];
+  for (let i = 0; i < 24; i++) {
+    for (let j = 0; j < 60; j += 30) {
+      let hour = i;
+      let ampm = "AM";
+      if (hour === 0) hour = 12;
+      else if (hour === 12) ampm = "PM";
+      else if (hour > 12) {
+        hour -= 12;
+        ampm = "PM";
+      }
+      times.push(`${hour}:${j === 0 ? '00' : '30'} ${ampm}`);
+    }
+  }
+  return times;
+};
+const TIME_OPTIONS = generateTimeOptions();
+
 export default function CreateEvent() {
   const { user } = useAuth();
   const [name, setName] = useState("");
@@ -65,11 +85,29 @@ export default function CreateEvent() {
   const [address2, setAddress2] = useState("");
   const [parish, setParish] = useState("");
   const [organizerName, setOrganizerName] = useState("");
+  const [description, setDescription] = useState("");
+  const [pickupTimes, setPickupTimes] = useState<string[]>([]);
+  const [returnTimes, setReturnTimes] = useState<string[]>([]);
+  const [basePrice, setBasePrice] = useState("");
+  const [eventAddons, setEventAddons] = useState<Array<{ name: string; price: string }>>([]);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState(false);
+
+  const handleAddPickupTime = (time: string) => {
+    if (time && !pickupTimes.includes(time)) setPickupTimes([...pickupTimes, time]);
+  };
+  const handleRemovePickupTime = (timeToRemove: string) => {
+    setPickupTimes(pickupTimes.filter(t => t !== timeToRemove));
+  };
+  const handleAddReturnTime = (time: string) => {
+    if (time && !returnTimes.includes(time)) setReturnTimes([...returnTimes, time]);
+  };
+  const handleRemoveReturnTime = (timeToRemove: string) => {
+    setReturnTimes(returnTimes.filter(t => t !== timeToRemove));
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -104,7 +142,7 @@ export default function CreateEvent() {
       bannerUrl = urlData.publicUrl;
     }
 
-    const { error: insertError } = await supabase.from("events").insert({
+    const { data: insertedEvent, error: insertError } = await supabase.from("events").insert({
       name,
       date,
       venue,
@@ -114,12 +152,36 @@ export default function CreateEvent() {
       organizer_name: organizerName || null,
       banner_url: bannerUrl || null,
       user_id: user.id,
-    });
+      description: description || null,
+      pickup_times: pickupTimes.length > 0 ? pickupTimes : null,
+      return_times: returnTimes.length > 0 ? returnTimes : null,
+      base_price: basePrice ? parseFloat(basePrice) : 0,
+      booking_enabled: true,
+    }).select("id").single();
 
-    if (insertError) {
-      setError(insertError.message);
+    if (insertError || !insertedEvent?.id) {
+      setError(insertError?.message || "Failed to create event");
       setLoading(false);
       return;
+    }
+
+    const normalizedAddons = eventAddons
+      .map((addon, idx) => ({
+        event_id: insertedEvent.id,
+        name: addon.name.trim(),
+        price: Number(addon.price),
+        sort_order: idx,
+        active: true,
+      }))
+      .filter((addon) => addon.name && !Number.isNaN(addon.price) && addon.price >= 0);
+
+    if (normalizedAddons.length > 0) {
+      const { error: addonError } = await supabase.from("event_addons").insert(normalizedAddons);
+      if (addonError) {
+        setError(addonError.message);
+        setLoading(false);
+        return;
+      }
     }
 
     setCreated(true);
@@ -333,6 +395,97 @@ export default function CreateEvent() {
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 transition-all"
               placeholder="e.g. Island Productions"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Description <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 transition-all min-h-[100px]"
+              placeholder="e.g. We will pick you up at the lobby and give you a complimentary cocktail..."
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 bg-gray-50/50 p-6 rounded-xl border border-gray-100">
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Pickup Times <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              {pickupTimes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {pickupTimes.map((t) => (
+                    <div key={t} className="bg-jamaica-green/10 text-jamaica-green px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                      {t}
+                      <button type="button" onClick={() => handleRemovePickupTime(t)} className="text-jamaica-green/70 hover:text-jamaica-green pb-0.5">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <select 
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 transition-all bg-white"
+                onChange={(e) => {
+                  handleAddPickupTime(e.target.value);
+                  e.target.value = "";
+                }}
+                defaultValue=""
+              >
+                <option value="" disabled>Select time to add...</option>
+                {TIME_OPTIONS.map((time) => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Return Times <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              {returnTimes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {returnTimes.map((t) => (
+                    <div key={t} className="bg-jamaica-green/10 text-jamaica-green px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                      {t}
+                      <button type="button" onClick={() => handleRemoveReturnTime(t)} className="text-jamaica-green/70 hover:text-jamaica-green pb-0.5">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <select 
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 transition-all bg-white"
+                onChange={(e) => {
+                  handleAddReturnTime(e.target.value);
+                  e.target.value = "";
+                }}
+                defaultValue=""
+              >
+                <option value="" disabled>Select time to add...</option>
+                {TIME_OPTIONS.map((time) => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="border border-gray-200 bg-gray-50/50 rounded-xl p-6 space-y-5">
+            <div className="animate-fade-up">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Base Ticket Price (J$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 transition-all bg-white"
+                placeholder="e.g. 25.00"
+              />
+              <AddonsBuilder addons={eventAddons} setAddons={setEventAddons} />
+            </div>
           </div>
 
           <div>

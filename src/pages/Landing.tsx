@@ -1,50 +1,53 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
-import EventCard from '../components/EventCard'
-import logo from '../assets/logo.png'
+import { useEffect, useState } from "react";
+
+import EventCard from "../components/EventCard";
+import { Link } from "react-router-dom";
+import logo from "../assets/logo.png";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 
 interface Event {
-  id: string
-  name: string
-  date: string
-  venue: string
-  address_1: string | null
-  address_2: string | null
-  parish: string | null
-  organizer_name: string | null
-  banner_url: string | null
+  id: string;
+  name: string;
+  date: string;
+  venue: string;
+  address_1: string | null;
+  address_2: string | null;
+  parish: string | null;
+  organizer_name: string | null;
+  banner_url: string | null;
 }
 
 export default function Landing() {
-  const { user } = useAuth()
-  const [events, setEvents] = useState<Event[]>([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth();
+  const [events, setEvents] = useState<Event[]>([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchEvents()
-  }, [])
+    fetchEvents();
+  }, []);
 
   const fetchEvents = async () => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date().toISOString().split("T")[0];
     const { data } = await supabase
-      .from('events')
-      .select('*')
-      .gte('date', today)
-      .order('date', { ascending: true })
-    setEvents(data || [])
-    setLoading(false)
-  }
+      .from("events")
+      .select("*")
+      .gte("date", today)
+      .order("date", { ascending: true });
+    setEvents(data || []);
+    setLoading(false);
+  };
 
   const filtered = events.filter((e) => {
-    const q = search.toLowerCase()
-    return e.name.toLowerCase().includes(q) ||
+    const q = search.toLowerCase();
+    return (
+      e.name.toLowerCase().includes(q) ||
       e.venue.toLowerCase().includes(q) ||
-      (e.parish || '').toLowerCase().includes(q) ||
-      (e.organizer_name || '').toLowerCase().includes(q)
-  })
+      (e.parish || "").toLowerCase().includes(q) ||
+      (e.organizer_name || "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -60,7 +63,7 @@ export default function Landing() {
               <div className="relative inline-block mb-8">
                 <img
                   src={logo}
-                  alt="Yaadman Events"
+                  alt="Party Spot JA"
                   className="w-28 h-28 md:w-36 md:h-36 mx-auto animate-float drop-shadow-[0_20px_50px_rgba(254,209,0,0.2)]"
                 />
                 <div className="absolute inset-0 rounded-full bg-jamaica-gold/10 blur-2xl scale-150 animate-pulse" />
@@ -80,10 +83,7 @@ export default function Landing() {
             <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold text-white mb-6 leading-[1.05] tracking-tight animate-fade-up delay-200">
               Discover
               <br />
-              <span className="text-shimmer">
-                Yaadman
-              </span>{' '}
-              Events
+              <span className="text-shimmer">PartySpot</span> JA
             </h1>
 
             <p className="text-base md:text-lg text-gray-400 mb-10 max-w-lg mx-auto leading-relaxed animate-fade-up delay-300">
@@ -96,8 +96,18 @@ export default function Landing() {
               <div className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-jamaica-green/20 via-jamaica-gold/10 to-jamaica-green/20 rounded-2xl opacity-0 group-focus-within:opacity-100 blur transition-opacity duration-500" />
                 <div className="relative flex items-center bg-white/[0.06] backdrop-blur-md rounded-xl border border-white/10 focus-within:border-jamaica-green/40 transition-colors">
-                  <svg className="ml-4 w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  <svg
+                    className="ml-4 w-5 h-5 text-gray-500 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
                   </svg>
                   <input
                     type="text"
@@ -129,36 +139,47 @@ export default function Landing() {
 
             <div className="mt-16 grid grid-cols-3 gap-4 max-w-lg mx-auto animate-fade-up delay-600">
               <div className="stat-glow text-center bg-white/[0.03] backdrop-blur-sm rounded-xl py-4 px-3 border border-white/[0.06] transition-all duration-300 hover:border-white/10">
-                <p className="text-2xl md:text-3xl font-extrabold text-white">{events.length}+</p>
-                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">Events</p>
+                <p className="text-2xl md:text-3xl font-extrabold text-white">
+                  {events.length}+
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">
+                  Events
+                </p>
               </div>
               <div className="stat-glow text-center bg-white/[0.03] backdrop-blur-sm rounded-xl py-4 px-3 border border-white/[0.06] transition-all duration-300 hover:border-white/10">
-                <p className="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-jamaica-green to-jamaica-gold">JA</p>
-                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">Island Wide</p>
+                <p className="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-jamaica-green to-jamaica-gold">
+                  JA
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">
+                  Island Wide
+                </p>
               </div>
               <div className="stat-glow text-center bg-white/[0.03] backdrop-blur-sm rounded-xl py-4 px-3 border border-white/[0.06] transition-all duration-300 hover:border-white/10">
-                <p className="text-2xl md:text-3xl font-extrabold text-white">24/7</p>
-                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">Access</p>
+                <p className="text-2xl md:text-3xl font-extrabold text-white">
+                  24/7
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1.5 uppercase tracking-widest font-medium">
+                  Access
+                </p>
               </div>
             </div>
           </div>
         </div>
-
       </section>
 
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex items-center justify-between mb-8 animate-fade-up">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {search ? 'Search Results' : 'Upcoming Events'}
+              {search ? "Search Results" : "Upcoming Events"}
             </h2>
             <p className="text-gray-500 text-sm mt-1">
-              {filtered.length} event{filtered.length !== 1 ? 's' : ''} found
+              {filtered.length} event{filtered.length !== 1 ? "s" : ""} found
             </p>
           </div>
           {search && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => setSearch("")}
               className="text-sm text-jamaica-green hover:text-jamaica-green-dark font-medium transition-colors"
             >
               Clear Search
@@ -173,8 +194,12 @@ export default function Landing() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 animate-scale-in">
             <div className="text-5xl mb-4">🎶</div>
-            <h3 className="text-xl font-semibold text-gray-700 mb-2">No events found</h3>
-            <p className="text-gray-500">Check back soon for upcoming events!</p>
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">
+              No events found
+            </h3>
+            <p className="text-gray-500">
+              Check back soon for upcoming events!
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -191,5 +216,5 @@ export default function Landing() {
         )}
       </section>
     </div>
-  )
+  );
 }

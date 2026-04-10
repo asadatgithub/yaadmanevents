@@ -11,15 +11,22 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
+    "@vercel/node": "^5.6.18",
+    "nodemailer": "^8.0.5",
+    "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
+    "raw-body": "^3.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "stripe": "^20.4.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^24.10.1",
+    "@types/nodemailer": "^8.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

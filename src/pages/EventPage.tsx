@@ -15,6 +15,9 @@ interface Event {
   banner_url: string | null
   qr_active: boolean | null
   user_id: string
+  booking_enabled: boolean | null
+  base_price: number | null
+  description: string | null
 }
 
 
@@ -25,6 +28,7 @@ export default function EventPage() {
   const { user } = useAuth()
 
   const [event, setEvent] = useState<Event | null>(null)
+  const [promoterName, setPromoterName] = useState<string | null>(null)
   const [myEvents, setMyEvents] = useState<Event[]>([])
   const [selectedEventId, setSelectedEventId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -34,34 +38,62 @@ export default function EventPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (id) fetchEvent()
+    if (!id) {
+      queueMicrotask(() => {
+        setLoading(false)
+        setEvent(null)
+        setPromoterName(null)
+      })
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    async function loadEvent() {
+      const { data } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single()
+      if (cancelled) return
+      setEvent(data)
+      if (data?.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', data.user_id)
+          .single()
+        if (!cancelled) setPromoterName(profile?.name ?? null)
+      } else if (!cancelled) {
+        setPromoterName(null)
+      }
+      if (!cancelled) setLoading(false)
+    }
+    loadEvent()
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   useEffect(() => {
-    if (user && isScan) fetchMyEvents()
+    if (!user || !isScan) return
+    const uid = user.id
+    let cancelled = false
+    async function loadMine() {
+      const { data } = await supabase
+        .from('events')
+        .select('*')
+        .eq('user_id', uid)
+        .order('date', { ascending: false })
+      if (cancelled) return
+      const events = data || []
+      setMyEvents(events)
+      if (events.length === 1) setSelectedEventId(events[0].id)
+    }
+    loadMine()
+    return () => {
+      cancelled = true
+    }
   }, [user, isScan])
-
-  const fetchEvent = async () => {
-    const { data } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', id)
-      .single()
-    setEvent(data)
-    setLoading(false)
-  }
-
-  const fetchMyEvents = async () => {
-    if (!user) return
-    const { data } = await supabase
-      .from('events')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-    const events = data || []
-    setMyEvents(events)
-    if (events.length === 1) setSelectedEventId(events[0].id)
-  }
 
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -171,7 +203,25 @@ export default function EventPage() {
               <div className="font-semibold text-gray-900">{event.organizer_name}</div>
             </div>
           )}
+          {promoterName && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+              <div className="flex items-center gap-2 text-sm text-gray-500 mb-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                Promoter
+              </div>
+              <div className="font-semibold text-gray-900">{promoterName}</div>
+            </div>
+          )}
         </div>
+
+        {event.description && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 md:p-8 mb-10">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">About this Event</h2>
+            <div className="text-gray-600 whitespace-pre-wrap leading-relaxed max-w-none">
+              {event.description}
+            </div>
+          </div>
+        )}
 
         {isScan ? (
           (() => {
@@ -212,7 +262,7 @@ export default function EventPage() {
                     You need to be logged in to record support for this promoter.
                   </p>
                   <Link
-                    to={`/login?redirect=/event/${id}?scan=1`}
+                    to={`/login?redirect=${encodeURIComponent(`/event/${id}?scan=1`)}`}
                     className="bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors inline-block"
                   >
                     Sign In
@@ -309,7 +359,7 @@ export default function EventPage() {
                   )}
                   <div className="flex gap-3">
                     <div className="relative flex-1">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">J$</span>
                       <input
                         type="number"
                         step="0.01"
@@ -334,14 +384,31 @@ export default function EventPage() {
             )
           })()
         ) : (
-          <div className="text-center">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-jamaica-green hover:text-jamaica-green-dark font-medium transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              Back to Events
-            </Link>
+          <div className="space-y-6">
+            {event.booking_enabled === true &&
+              event.base_price != null &&
+              !Number.isNaN(Number(event.base_price)) && (
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <Link
+                    to={`/event/${id}/book`}
+                    className="inline-flex items-center justify-center gap-2 bg-jamaica-gold hover:bg-jamaica-gold-dark text-jamaica-black font-bold px-8 py-3.5 rounded-xl transition-colors shadow-sm w-full sm:w-auto"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                    </svg>
+                    Book now — from ${Number(event.base_price).toFixed(2)}
+                  </Link>
+                </div>
+              )}
+            <div className="text-center">
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 text-jamaica-green hover:text-jamaica-green-dark font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                Back to Events
+              </Link>
+            </div>
           </div>
         )}
       </div>

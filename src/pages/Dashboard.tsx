@@ -14,6 +14,30 @@ interface Event {
   parish: string | null;
   organizer_name: string | null;
   banner_url: string | null;
+  user_id?: string;
+}
+
+interface Booking {
+  id: string;
+  event_id: string;
+  user_id: string | null;
+  customer_name: string | null;
+  customer_email: string;
+  base_price_snapshot: number;
+  addons_snapshot: unknown;
+  total_amount: number;
+  currency: string;
+  stripe_checkout_session_id: string | null;
+  status: string;
+  pickup_time: string | null;
+  return_time: string | null;
+  created_at: string;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
 }
 
 interface Support {
@@ -26,16 +50,20 @@ interface Support {
 
 function getWhatsAppUrl(eventName: string) {
   const message = encodeURIComponent(
-    `Hi, I'd like to request the QR code for my event: "${eventName}" on Yaadman Events.`,
+    `Hi, I'd like to request the QR code for my event: "${eventName}" on Party Spot JA.`,
   );
   return `https://wa.me/+18763462692?text=${message}`;
 }
 
 export default function Dashboard() {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [supports, setSupports] = useState<Support[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [myBookings, setMyBookings] = useState<Booking[]>([]);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -43,24 +71,44 @@ export default function Dashboard() {
     if (!user) return;
     let cancelled = false;
     async function load() {
-      const [myEventsRes, allEventsRes, supportsRes] = await Promise.all([
-        supabase
-          .from("events")
-          .select("*")
-          .eq("user_id", user!.id)
-          .order("date", { ascending: false }),
-        supabase.from("events").select("*"),
-        supabase.from("supports").select("*"),
-      ]);
+      const [myEventsRes, allEventsRes, profilesRes, supportsRes, bookingsRes] =
+        await Promise.all([
+          supabase
+            .from("events")
+            .select("*")
+            .eq("user_id", user!.id)
+            .order("date", { ascending: false }),
+          supabase.from("events").select("*"),
+          supabase.from("profiles").select("id, name, email"),
+          supabase.from("supports").select("*"),
+          supabase.from("bookings").select("*").order("created_at", { ascending: false }),
+        ]);
       if (cancelled) return;
-      setEvents(myEventsRes.data || []);
+      const myEv = myEventsRes.data || [];
+      setEvents(myEv);
       setAllEvents(allEventsRes.data || []);
+      setProfiles(profilesRes.data || []);
       setSupports(supportsRes.data || []);
+      
+      const bData = bookingsRes.data || [];
+      const evIds = new Set(myEv.map(e => e.id));
+      setBookings(bData.filter(b => evIds.has(b.event_id)));
+      const myEmail = (profile?.email || user?.email || "").toLowerCase();
+      setMyBookings(
+        bData.filter(
+          (b) =>
+            b.status === "paid" &&
+            (b.customer_email.toLowerCase() === myEmail || b.user_id === user?.id),
+        ),
+      );
+      
       setLoading(false);
     }
     load();
-    return () => { cancelled = true; };
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, profile?.email]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this event?")) return;
@@ -74,6 +122,16 @@ export default function Dashboard() {
     allEvents.find((e) => e.id === eventId)?.name || "Unknown Event";
   const getEventOrganizer = (eventId: string) =>
     allEvents.find((e) => e.id === eventId)?.organizer_name || "Unknown";
+  const getEventCreator = (eventId: string) => {
+    const ev = allEvents.find((e) => e.id === eventId);
+    if (!ev?.user_id) return null;
+    return profiles.find((p) => p.id === ev.user_id)?.name || null;
+  };
+  const getEventById = (eventId: string) => allEvents.find((e) => e.id === eventId) || null;
+  const selectedEvent = selectedBooking ? getEventById(selectedBooking.event_id) : null;
+  const selectedAddons = Array.isArray(selectedBooking?.addons_snapshot)
+    ? selectedBooking.addons_snapshot
+    : [];
 
   const myEventIds = events.map((e) => e.id);
   const getSupportersForEvent = (eventId: string) =>
@@ -101,30 +159,30 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-extrabold text-gray-900">
-              My Events
-            </h1>
+            <h1 className="text-3xl font-extrabold text-gray-900">My Events</h1>
             <p className="text-gray-500 mt-1">Welcome back, {profile?.name}</p>
           </div>
-          <Link
-            to="/create-event"
-            className="bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors inline-flex items-center gap-2 shadow-sm"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {isAdmin && (
+            <Link
+              to="/create-event"
+              className="bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors inline-flex items-center gap-2 shadow-sm"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Create Event
-          </Link>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Create Event
+            </Link>
+          )}
         </div>
 
         {events.length > 0 && (
@@ -132,7 +190,7 @@ export default function Dashboard() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <p className="text-sm text-gray-500">Total Support Received</p>
               <p className="text-2xl font-extrabold text-jamaica-green mt-1">
-                ${totalSupportReceived.toFixed(2)}
+                J${totalSupportReceived.toFixed(2)}
               </p>
             </div>
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
@@ -157,12 +215,14 @@ export default function Dashboard() {
             <p className="text-gray-500 mb-6">
               Create your first event and share it with the world!
             </p>
-            <Link
-              to="/create-event"
-              className="bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors"
-            >
-              Create Your First Event
-            </Link>
+            {isAdmin && (
+              <Link
+                to="/create-event"
+                className="bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+              >
+                Create Your First Event
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -240,7 +300,9 @@ export default function Dashboard() {
                               d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
                             />
                           </svg>
-                          {[event.venue, event.address_1, event.parish].filter(Boolean).join(', ')}
+                          {[event.venue, event.address_1, event.parish]
+                            .filter(Boolean)
+                            .join(", ")}
                         </span>
                         {eventSupports.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-jamaica-green font-medium">
@@ -302,33 +364,53 @@ export default function Dashboard() {
                         <h4 className="text-sm font-semibold text-gray-700">
                           Supporters ({eventSupports.length})
                         </h4>
-                        <span className="text-sm font-bold text-jamaica-green">${total.toFixed(2)} total</span>
+                        <span className="text-sm font-bold text-jamaica-green">
+                          J${total.toFixed(2)} total
+                        </span>
                       </div>
                       <div className="divide-y divide-gray-100">
-                        {eventSupports.map((s) => (
-                          <div
-                            key={s.id}
-                            className="px-5 py-3 flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-8 h-8 bg-jamaica-green/10 rounded-full flex items-center justify-center text-xs font-bold text-jamaica-green shrink-0">
-                                {getEventOrganizer(s.supporter_event_id).charAt(0).toUpperCase()}
+                        {eventSupports.map((s) => {
+                          const creator = getEventCreator(s.supporter_event_id);
+                          const initial = (
+                            creator || getEventOrganizer(s.supporter_event_id)
+                          )
+                            .charAt(0)
+                            .toUpperCase();
+                          return (
+                            <Link
+                              key={s.id}
+                              to={`/event/${s.supporter_event_id}`}
+                              className="px-5 py-3 flex items-center justify-between hover:bg-gray-50/80 transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-8 bg-jamaica-green/10 rounded-full flex items-center justify-center text-xs font-bold text-jamaica-green shrink-0">
+                                  {initial}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {getEventOrganizer(s.supporter_event_id)}
+                                    {creator && (
+                                      <span className="text-gray-500 font-normal">
+                                        {" "}
+                                        ({creator})
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {getEventName(s.supporter_event_id)}{" "}
+                                    &middot;{" "}
+                                    {new Date(
+                                      s.created_at,
+                                    ).toLocaleDateString()}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900">
-                                  {getEventOrganizer(s.supporter_event_id)}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {getEventName(s.supporter_event_id)} &middot;{" "}
-                                  {new Date(s.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                            <span className="text-sm font-bold text-jamaica-green shrink-0 ml-3">
-                              ${Number(s.amount).toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
+                              <span className="text-sm font-bold text-jamaica-green shrink-0 ml-3">
+                                J${Number(s.amount).toFixed(2)}
+                              </span>
+                            </Link>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -338,6 +420,133 @@ export default function Dashboard() {
           </div>
         )}
 
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">
+              My Purchased Tickets
+            </h2>
+            <span className="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
+              {myBookings.length} total
+            </span>
+          </div>
+          {myBookings.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-100 mb-10">
+              <div className="text-4xl mb-3">🧾</div>
+              <p className="text-gray-500 font-medium">No purchased tickets yet</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-10">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-medium">
+                    <tr>
+                      <th className="px-5 py-3">Event</th>
+                      <th className="px-5 py-3">Logistics</th>
+                      <th className="px-5 py-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {myBookings.map((b) => (
+                      <tr
+                        key={b.id}
+                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedBooking(b)}
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-gray-900">{getEventName(b.event_id)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{new Date(b.created_at).toLocaleString()}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          {(b.pickup_time || b.return_time) ? (
+                            <div className="text-xs font-medium text-jamaica-gold-dark bg-jamaica-gold/10 inline-block px-2.5 py-1.5 rounded-lg">
+                              {b.pickup_time && <div>Pickup: {b.pickup_time}</div>}
+                              {b.return_time && <div>Return: {b.return_time}</div>}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <span className="font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+                            J\${Number(b.total_amount).toFixed(2)}
+                          </span>
+                          <p className="text-xs text-gray-400 mt-1">View receipt</p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">
+              Ticket Bookings
+            </h2>
+            <span className="text-sm font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg">
+              {bookings.length} total
+            </span>
+          </div>
+          
+          {bookings.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
+              <div className="text-4xl mb-3">🎫</div>
+              <p className="text-gray-500 font-medium">No bookings yet</p>
+              <p className="text-sm text-gray-400 mt-1">When users book your events, they will appear here.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-medium">
+                    <tr>
+                      <th className="px-5 py-3">Guest & Event</th>
+                      <th className="px-5 py-3">Contact</th>
+                      <th className="px-5 py-3">Logistics</th>
+                      <th className="px-5 py-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {bookings.map((b) => (
+                      <tr
+                        key={b.id}
+                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedBooking(b)}
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-gray-900">{b.customer_name || "Anonymous Guest"}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{getEventName(b.event_id)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{new Date(b.created_at).toLocaleString()}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="font-medium text-gray-700">{b.customer_email}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          {(b.pickup_time || b.return_time) ? (
+                            <div className="text-xs font-medium text-jamaica-gold-dark bg-jamaica-gold/10 inline-block px-2.5 py-1.5 rounded-lg">
+                              {b.pickup_time && <div>Pickup: {b.pickup_time}</div>}
+                              {b.return_time && <div>Return: {b.return_time}</div>}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <span className="font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+                            J\${Number(b.total_amount).toFixed(2)}
+                          </span>
+                          <p className="text-xs text-gray-400 mt-1">View receipt</p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
         {supportGiven.length > 0 && (
           <div className="mt-10">
             <h2 className="text-xl font-bold text-gray-900 mb-4">
@@ -345,36 +554,146 @@ export default function Dashboard() {
             </h2>
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="divide-y divide-gray-100">
-                {supportGiven.map((s) => (
-                  <div
-                    key={s.id}
-                    className="px-5 py-4 flex items-center justify-between"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900">
-                        {getEventName(s.event_id)}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Organized by {getEventOrganizer(s.event_id)} &middot;{" "}
-                        {new Date(s.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className="text-sm font-bold text-jamaica-gold-dark shrink-0 ml-3">
-                      ${Number(s.amount).toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                {supportGiven.map((s) => {
+                  const creator = getEventCreator(s.event_id);
+                  return (
+                    <Link
+                      key={s.id}
+                      to={`/event/${s.event_id}`}
+                      className="px-5 py-4 flex items-center justify-between hover:bg-gray-50/80 transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          {getEventName(s.event_id)}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {[
+                            getEventOrganizer(s.event_id) !== "Unknown" &&
+                              `Organized by ${getEventOrganizer(s.event_id)}`,
+                            creator && `Promoter: ${creator}`,
+                            new Date(s.created_at).toLocaleDateString(),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <span className="text-sm font-bold text-jamaica-gold-dark shrink-0 ml-3">
+                        J${Number(s.amount).toFixed(2)}
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
               <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
                 <span className="text-sm text-gray-500">Total Given</span>
                 <span className="text-sm font-bold text-gray-900">
-                  ${totalSupportGiven.toFixed(2)}
+                  J${totalSupportGiven.toFixed(2)}
                 </span>
               </div>
             </div>
           </div>
         )}
       </div>
+      {selectedBooking && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedBooking(null)}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">Ticket Receipt</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedBooking(null)}
+                className="text-gray-400 hover:text-gray-600 text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs text-gray-500">Event</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">{selectedEvent?.name || "Unknown Event"}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {selectedEvent ? new Date(selectedEvent.date).toLocaleDateString() : "Unknown date"} · {selectedEvent?.venue || "Unknown venue"}
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {[selectedEvent?.address_1, selectedEvent?.address_2, selectedEvent?.parish].filter(Boolean).join(", ")}
+                </p>
+                {selectedEvent?.organizer_name && (
+                  <p className="text-sm text-gray-500 mt-1">Organizer: {selectedEvent.organizer_name}</p>
+                )}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="bg-white border border-gray-100 rounded-xl p-4">
+                  <p className="text-xs text-gray-500">Guest</p>
+                  <p className="font-semibold text-gray-900 mt-1">
+                    {selectedBooking.customer_name || "Anonymous Guest"}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">{selectedBooking.customer_email}</p>
+                </div>
+                <div className="bg-white border border-gray-100 rounded-xl p-4">
+                  <p className="text-xs text-gray-500">Booked At</p>
+                  <p className="font-semibold text-gray-900 mt-1">
+                    {new Date(selectedBooking.created_at).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1 capitalize">{selectedBooking.status}</p>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-2">Selections</p>
+                {(selectedBooking.pickup_time || selectedBooking.return_time) ? (
+                  <div className="space-y-1 text-sm text-gray-700">
+                    {selectedBooking.pickup_time && <p>Pickup: {selectedBooking.pickup_time}</p>}
+                    {selectedBooking.return_time && <p>Return: {selectedBooking.return_time}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No pickup/return options selected.</p>
+                )}
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-3">Payment Breakdown</p>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Base Ticket</span>
+                  <span className="font-medium text-gray-900">J${Number(selectedBooking.base_price_snapshot || 0).toFixed(2)}</span>
+                </div>
+                {selectedAddons.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    {selectedAddons.map((addon, idx) => {
+                      const a = addon as { name?: string; price?: number | string };
+                      return (
+                        <div key={`${a.name || "addon"}-${idx}`} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{a.name || "Add-on"}</span>
+                          <span className="font-medium text-gray-900">J${Number(a.price || 0).toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="border-t border-gray-100 mt-3 pt-3 flex items-center justify-between">
+                  <span className="font-semibold text-gray-900">Total Paid</span>
+                  <span className="text-lg font-extrabold text-emerald-600">
+                    J${Number(selectedBooking.total_amount).toFixed(2)} {selectedBooking.currency.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs text-gray-500">Receipt Reference</p>
+                <p className="text-sm text-gray-700 font-mono break-all mt-1">
+                  {selectedBooking.stripe_checkout_session_id || selectedBooking.id}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

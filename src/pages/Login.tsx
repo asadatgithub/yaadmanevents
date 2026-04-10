@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
@@ -9,6 +9,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,7 +20,12 @@ export default function Login() {
       setError(error)
       setLoading(false)
     } else {
-      navigate('/dashboard')
+      const redirect = searchParams.get('redirect')
+      const safe =
+        redirect &&
+        redirect.startsWith('/') &&
+        !redirect.startsWith('//')
+      navigate(safe ? redirect : '/dashboard')
     }
   }
 

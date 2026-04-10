@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Link, useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
-
-interface Profile {
-  id: string;
-  name: string;
-  email: string;
-  is_admin: boolean;
-  created_at: string;
-}
+import UsersTab from "./admin/UsersTab";
+import BookingsTab from "./admin/BookingsTab";
+import type { AdminBooking as Booking, AdminProfile as Profile } from "./admin/types";
 
 interface Event {
   id: string;
@@ -26,6 +21,17 @@ interface Event {
   qr_active: boolean | null;
   user_id: string;
   created_at: string;
+  base_price?: number | null;
+  booking_enabled?: boolean | null;
+}
+
+interface EventAddon {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number;
+  sort_order: number;
+  active: boolean;
 }
 
 interface Support {
@@ -36,42 +42,49 @@ interface Support {
   created_at: string;
 }
 
-type Tab = "overview" | "users" | "events" | "supports";
+interface TicketScan {
+  id: string;
+  scan_result: string;
+  scanned_at: string;
+}
+
+type Tab = "overview" | "users" | "events" | "supports" | "bookings";
 
 const BASE_URL = window.location.origin;
 
 export default function AdminDashboard() {
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("overview");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [supports, setSupports] = useState<Support[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [ticketScans, setTicketScans] = useState<TicketScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [qrEventId, setQrEventId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [organizerFilter, setOrganizerFilter] = useState("");
-  const [creatingEvent, setCreatingEvent] = useState(false);
-  const [newEvent, setNewEvent] = useState({
+  const [managingAddonsFor, setManagingAddonsFor] = useState<Event | null>(null);
+  const [eventAddons, setEventAddons] = useState<EventAddon[]>([]);
+  const [addonName, setAddonName] = useState("");
+  const [addonPrice, setAddonPrice] = useState("");
+  const [savingAddon, setSavingAddon] = useState(false);
+  const [creatingStaff, setCreatingStaff] = useState(false);
+  const [staffForm, setStaffForm] = useState({
     name: "",
-    date: "",
-    venue: "",
-    address_1: "",
-    address_2: "",
-    parish: "",
-    organizer_name: "",
+    email: "",
+    password: "",
+    userType: "driver" as "driver" | "club",
   });
-  const [newEventBanner, setNewEventBanner] = useState<File | null>(null);
-  const [newEventPreview, setNewEventPreview] = useState<string | null>(null);
-  const [savingEvent, setSavingEvent] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [profilesRes, eventsRes, supportsRes] = await Promise.all([
+      const [profilesRes, eventsRes, supportsRes, bookingsRes, scansRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("*")
@@ -81,11 +94,21 @@ export default function AdminDashboard() {
           .from("supports")
           .select("*")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("bookings")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("ticket_scans")
+          .select("*")
+          .order("scanned_at", { ascending: false }),
       ]);
       if (cancelled) return;
       setProfiles(profilesRes.data || []);
       setEvents(eventsRes.data || []);
       setSupports(supportsRes.data || []);
+      setBookings(bookingsRes.data || []);
+      setTicketScans((scansRes.data || []) as TicketScan[]);
       setLoading(false);
     }
     load();
@@ -93,6 +116,29 @@ export default function AdminDashboard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!managingAddonsFor) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("event_addons")
+        .select("*")
+        .eq("event_id", managingAddonsFor.id)
+        .order("sort_order", { ascending: true });
+      if (!cancelled) setEventAddons((data || []) as EventAddon[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [managingAddonsFor]);
+
+  const closeAddonModal = () => {
+    setManagingAddonsFor(null);
+    setEventAddons([]);
+    setAddonName("");
+    setAddonPrice("");
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -147,6 +193,13 @@ export default function AdminDashboard() {
         address_2: editingEvent.address_2 || null,
         parish: editingEvent.parish || null,
         organizer_name: editingEvent.organizer_name || null,
+        base_price:
+          editingEvent.booking_enabled &&
+          editingEvent.base_price != null &&
+          !Number.isNaN(Number(editingEvent.base_price))
+            ? Number(editingEvent.base_price)
+            : null,
+        booking_enabled: !!editingEvent.booking_enabled,
       })
       .eq("id", editingEvent.id);
     setEvents((e) =>
@@ -154,6 +207,47 @@ export default function AdminDashboard() {
     );
     setEditingEvent(null);
     showToast("Event updated");
+  };
+
+  const addEventAddon = async () => {
+    if (!managingAddonsFor || !addonName.trim()) return;
+    const price = parseFloat(addonPrice);
+    if (Number.isNaN(price) || price < 0) return;
+    setSavingAddon(true);
+    const { data, error } = await supabase
+      .from("event_addons")
+      .insert({
+        event_id: managingAddonsFor.id,
+        name: addonName.trim(),
+        price,
+        sort_order: eventAddons.length,
+        active: true,
+      })
+      .select()
+      .single();
+    if (!error && data) {
+      setEventAddons((a) => [...a, data as EventAddon]);
+      setAddonName("");
+      setAddonPrice("");
+      showToast("Add-on added");
+    }
+    setSavingAddon(false);
+  };
+
+  const removeEventAddon = async (addonId: string) => {
+    await supabase.from("event_addons").delete().eq("id", addonId);
+    setEventAddons((a) => a.filter((x) => x.id !== addonId));
+    showToast("Add-on removed");
+  };
+
+  const toggleEventAddonActive = async (a: EventAddon) => {
+    await supabase
+      .from("event_addons")
+      .update({ active: !a.active })
+      .eq("id", a.id);
+    setEventAddons((list) =>
+      list.map((x) => (x.id === a.id ? { ...x, active: !x.active } : x)),
+    );
   };
 
   const toggleQrActive = async (ev: Event) => {
@@ -173,52 +267,6 @@ export default function AdminDashboard() {
       ),
     );
     showToast(newValue ? "QR code enabled" : "QR code disabled");
-  };
-
-  const handleCreateEvent = async () => {
-    if (!user || !newEvent.name || !newEvent.date || !newEvent.venue) return;
-    setSavingEvent(true);
-
-    let bannerUrl = "";
-    if (newEventBanner) {
-      const ext = newEventBanner.name.split(".").pop();
-      const filePath = `admin/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("event-banners")
-        .upload(filePath, newEventBanner);
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage
-          .from("event-banners")
-          .getPublicUrl(filePath);
-        bannerUrl = urlData.publicUrl;
-      }
-    }
-
-    const { data, error } = await supabase
-      .from("events")
-      .insert({
-        name: newEvent.name,
-        date: newEvent.date,
-        venue: newEvent.venue,
-        address_1: newEvent.address_1 || null,
-        address_2: newEvent.address_2 || null,
-        parish: newEvent.parish || null,
-        organizer_name: newEvent.organizer_name || null,
-        banner_url: bannerUrl || null,
-        user_id: user.id,
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      setEvents((prev) => [data, ...prev]);
-      setNewEvent({ name: "", date: "", venue: "", address_1: "", address_2: "", parish: "", organizer_name: "" });
-      setNewEventBanner(null);
-      setNewEventPreview(null);
-      setCreatingEvent(false);
-      showToast("Event created");
-    }
-    setSavingEvent(false);
   };
 
   const copyQrImage = async () => {
@@ -255,12 +303,60 @@ export default function AdminDashboard() {
     events.find((e) => e.id === eventId)?.name || "Unknown Event";
   const getEventOrganizer = (eventId: string) =>
     events.find((e) => e.id === eventId)?.organizer_name || "Unknown";
+  const getEventCreator = (eventId: string) => {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev?.user_id) return null;
+    return profiles.find((p) => p.id === ev.user_id)?.name || null;
+  };
   const getEventSupports = (eventId: string) =>
     supports.filter((s) => s.event_id === eventId);
   const getEventTotal = (eventId: string) =>
     getEventSupports(eventId).reduce((sum, s) => sum + Number(s.amount), 0);
   const totalSupport = supports.reduce((sum, s) => sum + Number(s.amount), 0);
   const nonAdminUsers = profiles.filter((p) => !p.is_admin);
+  const scannerUsers = profiles.filter((p) => p.user_type === "driver" || p.user_type === "club");
+
+  const createStaffAccount = async () => {
+    if (!staffForm.name || !staffForm.email || staffForm.password.length < 6) return;
+    setCreatingStaff(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const apiBase = import.meta.env.VITE_API_URL || "";
+    const res = await fetch(`${apiBase}/api/admin-create-user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(staffForm),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast("Staff account created");
+      setStaffForm({ name: "", email: "", password: "", userType: "driver" });
+    } else {
+      const { data: fallbackSignUp, error: fallbackErr } = await supabase.auth.signUp({
+        email: staffForm.email.trim().toLowerCase(),
+        password: staffForm.password,
+        options: {
+          data: {
+            name: staffForm.name.trim(),
+            user_type: staffForm.userType,
+          },
+        },
+      });
+      if (fallbackErr || !fallbackSignUp.user) {
+        showToast(typeof body.error === "string" ? body.error : fallbackErr?.message || "Failed to create account");
+        setCreatingStaff(false);
+        return;
+      }
+      showToast("Staff account created");
+      setStaffForm({ name: "", email: "", password: "", userType: "driver" });
+    }
+    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    setProfiles((data || []) as Profile[]);
+    setCreatingStaff(false);
+  };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     {
@@ -296,6 +392,15 @@ export default function AdminDashboard() {
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      ),
+    },
+    {
+      id: "bookings",
+      label: "Bookings",
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
         </svg>
       ),
     },
@@ -398,8 +503,19 @@ export default function AdminDashboard() {
                     </svg>
                   </div>
                 </div>
-                <p className="text-2xl font-extrabold text-gray-900">${totalSupport.toFixed(2)}</p>
+                <p className="text-2xl font-extrabold text-gray-900">J${totalSupport.toFixed(2)}</p>
                 <p className="text-sm text-gray-500 mt-0.5">Total Support</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v4m0 8v4m8-8h-4M8 12H4m12.364 5.364l-2.828-2.828M9.464 9.464L6.636 6.636m9.9 0l-2.828 2.828M9.464 14.536l-2.828 2.828" />
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-2xl font-extrabold text-gray-900">{ticketScans.length}</p>
+                <p className="text-sm text-gray-500 mt-0.5">Total Ticket Scans</p>
               </div>
             </div>
 
@@ -460,44 +576,16 @@ export default function AdminDashboard() {
         )}
 
         {tab === "users" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-bold text-gray-900">{profiles.length} Users</h2>
-            </div>
-            {profiles.map((p) => (
-              <div key={p.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-jamaica-green/10 rounded-full flex items-center justify-center text-sm font-bold text-jamaica-green shrink-0">
-                    {p.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold text-gray-900">{p.name}</p>
-                      {p.is_admin && (
-                        <span className="bg-jamaica-gold/15 text-jamaica-gold-dark px-2 py-0.5 rounded text-xs font-medium">Admin</span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-500 truncate">{p.email}</p>
-                    <p className="text-xs text-gray-400 mt-1">Joined {new Date(p.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => setEditingUser(p)} className="p-2 text-gray-400 hover:text-jamaica-green hover:bg-jamaica-green/5 rounded-lg transition-colors" title="Edit">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    {!p.is_admin && (
-                      <button onClick={() => deleteUser(p.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <UsersTab
+            profiles={profiles}
+            scannerUsersCount={scannerUsers.length}
+            staffForm={staffForm}
+            creatingStaff={creatingStaff}
+            setStaffForm={setStaffForm}
+            createStaffAccount={createStaffAccount}
+            setEditingUser={setEditingUser}
+            deleteUser={deleteUser}
+          />
         )}
 
         {tab === "events" && (() => {
@@ -513,15 +601,15 @@ export default function AdminDashboard() {
                 {filteredEvents.length} Event{filteredEvents.length !== 1 ? "s" : ""}
               </h2>
               <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => setCreatingEvent(true)}
+                <Link
+                  to="/create-event"
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-jamaica-green hover:bg-jamaica-green-dark rounded-lg transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   Create Event
-                </button>
+                </Link>
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                 </svg>
@@ -588,12 +676,27 @@ export default function AdminDashboard() {
                         </div>
                         {getEventSupports(ev.id).length > 0 && (
                           <p className="text-xs text-jamaica-green font-medium mt-2">
-                            {getEventSupports(ev.id).length} supports &middot; ${getEventTotal(ev.id).toFixed(2)} total
+                            {getEventSupports(ev.id).length} supports &middot; J${getEventTotal(ev.id).toFixed(2)} total
                           </p>
                         )}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-50">
+                      {ev.booking_enabled && (
+                        <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md">
+                          Booking J${Number(ev.base_price ?? 0).toFixed(2)}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEventAddons([]);
+                          setManagingAddonsFor(ev);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors"
+                      >
+                        Add-ons
+                      </button>
                       <button onClick={() => setEditingEvent(ev)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-jamaica-green bg-jamaica-green/5 hover:bg-jamaica-green/10 rounded-lg transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -637,7 +740,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-lg font-bold text-gray-900">Support by Event</h2>
               <span className="text-sm font-semibold text-jamaica-green bg-jamaica-green/10 px-3 py-1 rounded-lg">
-                Total: ${totalSupport.toFixed(2)}
+                Total: J${totalSupport.toFixed(2)}
               </span>
             </div>
             {events.map((ev) => {
@@ -651,22 +754,34 @@ export default function AdminDashboard() {
                       <p className="text-xs text-gray-500 mt-0.5">{[ev.organizer_name, ev.venue, ev.parish].filter(Boolean).join(' · ')} &middot; {ev.date}</p>
                     </div>
                     <span className="bg-jamaica-green/10 text-jamaica-green px-3 py-1 rounded-lg text-sm font-semibold shrink-0 ml-3">
-                      ${getEventTotal(ev.id).toFixed(2)}
+                      J${getEventTotal(ev.id).toFixed(2)}
                     </span>
                   </div>
                   <div className="divide-y divide-gray-50">
-                    {evSupports.map((s) => (
-                      <div key={s.id} className="px-5 py-3 flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{getEventOrganizer(s.supporter_event_id)}</p>
-                          <p className="text-xs text-gray-500">{getEventName(s.supporter_event_id)}</p>
-                        </div>
-                        <div className="text-right shrink-0 ml-3">
-                          <span className="font-medium text-gray-900 text-sm">${Number(s.amount).toFixed(2)}</span>
-                          <p className="text-xs text-gray-400">{new Date(s.created_at).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                    ))}
+                    {evSupports.map((s) => {
+                      const creator = getEventCreator(s.supporter_event_id);
+                      return (
+                        <Link
+                          key={s.id}
+                          to={`/event/${s.supporter_event_id}`}
+                          className="px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer block"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">
+                              {getEventOrganizer(s.supporter_event_id)}
+                              {creator && (
+                                <span className="text-gray-500 font-normal"> ({creator})</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500">{getEventName(s.supporter_event_id)}</p>
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            <span className="font-medium text-gray-900 text-sm">J${Number(s.amount).toFixed(2)}</span>
+                            <p className="text-xs text-gray-400">{new Date(s.created_at).toLocaleDateString()}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -680,6 +795,8 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
+
+        {tab === "bookings" && <BookingsTab bookings={bookings} getEventName={getEventName} />}
       </div>
 
       {editingUser && (
@@ -749,6 +866,37 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Organizer</label>
                 <input type="text" value={editingEvent.organizer_name || ""} onChange={(e) => setEditingEvent({ ...editingEvent, organizer_name: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!editingEvent.booking_enabled}
+                  onChange={(e) =>
+                    setEditingEvent({
+                      ...editingEvent,
+                      booking_enabled: e.target.checked,
+                    })
+                  }
+                  className="rounded border-gray-300 text-jamaica-green focus:ring-jamaica-green"
+                />
+                <span className="text-sm font-medium text-gray-700">Enable booking (Stripe)</span>
+              </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Base ticket price (JMD)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  disabled={!editingEvent.booking_enabled}
+                  value={editingEvent.base_price ?? ""}
+                  onChange={(e) =>
+                    setEditingEvent({
+                      ...editingEvent,
+                      base_price: e.target.value === "" ? null : parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20 disabled:bg-gray-50 disabled:text-gray-400"
+                />
+              </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={updateEvent} className="flex-1 bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold py-3 rounded-xl transition-colors">Save Changes</button>
                 <button onClick={() => setEditingEvent(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-xl transition-colors">Cancel</button>
@@ -758,69 +906,63 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {creatingEvent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setCreatingEvent(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">Create Event</h2>
-              <button onClick={() => setCreatingEvent(false)} className="text-gray-400 hover:text-gray-600 p-1">
+
+      {managingAddonsFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={closeAddonModal}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Add-ons — {managingAddonsFor.name}</h2>
+              <button type="button" onClick={closeAddonModal} className="text-gray-400 hover:text-gray-600 p-1">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Event Name</label>
-                <input type="text" value={newEvent.name} onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })} placeholder="e.g. Summer Vibes Concert" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-                <input type="date" value={newEvent.date} onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Venue</label>
-                <input type="text" value={newEvent.venue} onChange={(e) => setNewEvent({ ...newEvent, venue: e.target.value })} placeholder="e.g. Kingston Waterfront" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Address 1 <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <input type="text" value={newEvent.address_1} onChange={(e) => setNewEvent({ ...newEvent, address_1: e.target.value })} placeholder="e.g. 12 Ocean Blvd" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
+            <div className="space-y-2 mb-4">
+              {eventAddons.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${a.active ? "text-gray-900" : "text-gray-400 line-through"}`}>{a.name}</p>
+                    <p className="text-xs text-gray-500">J${Number(a.price).toFixed(2)}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button type="button" onClick={() => toggleEventAddonActive(a)} className="text-xs px-2 py-1 rounded-md bg-white border border-gray-200 hover:bg-gray-50">
+                      {a.active ? "Off" : "On"}
+                    </button>
+                    <button type="button" onClick={() => removeEventAddon(a.id)} className="text-xs px-2 py-1 rounded-md text-red-600 border border-red-100 hover:bg-red-50">
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Address 2 <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <input type="text" value={newEvent.address_2} onChange={(e) => setNewEvent({ ...newEvent, address_2: e.target.value })} placeholder="e.g. Suite 4" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Parish <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input type="text" value={newEvent.parish} onChange={(e) => setNewEvent({ ...newEvent, parish: e.target.value })} placeholder="e.g. Kingston" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Organizer Name <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input type="text" value={newEvent.organizer_name} onChange={(e) => setNewEvent({ ...newEvent, organizer_name: e.target.value })} placeholder="e.g. Island Productions" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green focus:ring-2 focus:ring-jamaica-green/20" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Banner Image</label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-jamaica-green/50 transition-colors">
-                  {newEventPreview ? (
-                    <div className="relative">
-                      <img src={newEventPreview} alt="Preview" className="max-h-36 mx-auto rounded-lg" />
-                      <button type="button" onClick={() => { setNewEventBanner(null); setNewEventPreview(null); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 transition-colors">x</button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer block py-2">
-                      <p className="text-sm text-gray-500 font-medium">Click to upload</p>
-                      <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WEBP</p>
-                      <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setNewEventBanner(f); setNewEventPreview(URL.createObjectURL(f)); } }} className="hidden" />
-                    </label>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={handleCreateEvent} disabled={savingEvent || !newEvent.name || !newEvent.date || !newEvent.venue} className="flex-1 bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
-                  {savingEvent ? "Creating..." : "Create Event"}
-                </button>
-                <button onClick={() => setCreatingEvent(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-xl transition-colors">Cancel</button>
-              </div>
+              ))}
+              {eventAddons.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">No add-ons yet</p>
+              )}
+            </div>
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <p className="text-sm font-semibold text-gray-700">New add-on</p>
+              <input
+                type="text"
+                value={addonName}
+                onChange={(e) => setAddonName(e.target.value)}
+                placeholder="Name (e.g. Luxury pickup)"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green text-sm"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={addonPrice}
+                onChange={(e) => setAddonPrice(e.target.value)}
+                placeholder="Price JMD"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-jamaica-green text-sm"
+              />
+              <button
+                type="button"
+                onClick={addEventAddon}
+                disabled={savingAddon}
+                className="w-full bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50"
+              >
+                {savingAddon ? "Adding…" : "Add add-on"}
+              </button>
             </div>
           </div>
         </div>

@@ -7,6 +7,7 @@ interface Profile {
   name: string
   email: string
   is_admin: boolean
+  user_type: 'admin' | 'organizer' | 'driver' | 'club' | 'customer'
 }
 
 interface AuthContextType {
@@ -17,6 +18,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   isAdmin: boolean
+  isScanner: boolean
+  userType: Profile['user_type'] | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -85,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signIn,
         signOut,
-        isAdmin: profile?.is_admin ?? false,
+        isAdmin: (profile?.is_admin ?? false) || profile?.user_type === 'admin',
+        isScanner: profile?.user_type === 'driver' || profile?.user_type === 'club',
+        userType: profile?.user_type ?? null,
       }}
     >
       {children}

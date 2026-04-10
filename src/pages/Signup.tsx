@@ -1,36 +1,37 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { Link, useNavigate } from "react-router-dom";
+
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
+import { useState } from "react";
 
 export default function Signup() {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const { signUp } = useAuth()
-  const navigate = useNavigate()
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const { signUp } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    const { error } = await signUp(email, password, name)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const { error } = await signUp(email, password, name);
     if (error) {
-      setError(error)
-      setLoading(false)
+      setError(error);
+      setLoading(false);
     } else {
-      const { data } = await supabase.auth.getSession()
+      const { data } = await supabase.auth.getSession();
       if (data.session) {
-        navigate('/dashboard', { replace: true })
+        navigate("/dashboard", { replace: true });
       } else {
-        setSuccess(true)
+        setSuccess(true);
       }
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   if (success) {
     return (
@@ -38,14 +39,27 @@ export default function Signup() {
         <div className="w-full max-w-md text-center">
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-10">
             <div className="w-16 h-16 bg-jamaica-green/10 rounded-full flex items-center justify-center mx-auto mb-5">
-              <svg className="w-8 h-8 text-jamaica-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              <svg
+                className="w-8 h-8 text-jamaica-green"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
               </svg>
             </div>
-            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Check Your Email</h2>
+            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">
+              Check Your Email
+            </h2>
             <p className="text-gray-500 mb-6">
-              We've sent a confirmation link to <span className="font-medium text-gray-700">{email}</span>. 
-              Please check your inbox and click the link to verify your account.
+              We've sent a confirmation link to{" "}
+              <span className="font-medium text-gray-700">{email}</span>. Please
+              check your inbox and click the link to verify your account.
             </p>
             <Link
               to="/login"
@@ -56,18 +70,23 @@ export default function Signup() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-gray-900">Create Account</h1>
-          <p className="text-gray-500 mt-2">Join Yaadman Events today</p>
+          <h1 className="text-3xl font-extrabold text-gray-900">
+            Create Account
+          </h1>
+          <p className="text-gray-500 mt-2">Join Party Spot JA today</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 space-y-5">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 space-y-5"
+        >
           {error && (
             <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -75,7 +94,9 @@ export default function Signup() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Name
+            </label>
             <input
               type="text"
               required
@@ -87,7 +108,9 @@ export default function Signup() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
             <input
               type="email"
               required
@@ -99,7 +122,9 @@ export default function Signup() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password
+            </label>
             <input
               type="password"
               required
@@ -116,17 +141,20 @@ export default function Signup() {
             disabled={loading}
             className="w-full bg-jamaica-green hover:bg-jamaica-green-dark text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            {loading ? "Creating Account..." : "Create Account"}
           </button>
 
           <p className="text-center text-sm text-gray-500">
-            Already have an account?{' '}
-            <Link to="/login" className="text-jamaica-green font-medium hover:underline">
+            Already have an account?{" "}
+            <Link
+              to="/login"
+              className="text-jamaica-green font-medium hover:underline"
+            >
               Sign In
             </Link>
           </p>
         </form>
       </div>
     </div>
-  )
+  );
 }
